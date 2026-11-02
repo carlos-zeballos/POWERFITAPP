@@ -1,0 +1,29 @@
+{
+  "_nota": "Archivo editable por el gimnasio. Todo valor con [POR DEFINIR] es un marcador: reemplazar con datos reales antes de publicar.",
+  "nombre": "PowerFit",
+  "ciudad": "Arequipa",
+  "eslogan": "Entrena con poder. Vuelve cada día.",
+  "url": "https://powerfit.pe",
+  "telefonoWhatsApp": "51900000000",
+  "telefonoVisible": "[POR DEFINIR] 900 000 000",
+  "email": "[POR DEFINIR]@powerfit.pe",
+  "direccion": "[POR DEFINIR] Av. Ejemplo 123, Arequipa",
+  "geo": { "lat": -16.3989, "lng": -71.535 },
+  "redes": { "instagram": "https://instagram.com/powerfit", "facebook": "https://facebook.com/powerfit" },
+  "horarios": [
+    { "dias": "Lunes a viernes", "horas": "[POR DEFINIR] 05:00 – 22:00" },
+    { "dias": "Sábado", "horas": "[POR DEFINIR] 07:00 – 18:00" },
+    { "dias": "Domingo y feriados", "horas": "[POR DEFINIR] 08:00 – 13:00" }
+  ],
+  "planes": [
+    { "nombre": "Mensual", "dias": 30, "precio": null, "detalle": "Acceso libre a sala de máquinas y peso libre." },
+    { "nombre": "Trimestral", "dias": 90, "precio": null, "detalle": "Tres meses de constancia.", "destacado": true },
+    { "nombre": "Semestral", "dias": 180, "precio": null, "detalle": "Medio año para transformar tu rutina." },
+    { "nombre": "Anual", "dias": 365, "precio": null, "detalle": "El compromiso completo." }
+  ],
+  "galeria": [
+    { "src": "/galeria/sala.svg", "alt": "[POR DEFINIR] Foto de la sala de pesas" },
+    { "src": "/galeria/funcional.svg", "alt": "[POR DEFINIR] Foto del área funcional" },
+    { "src": "/galeria/cardio.svg", "alt": "[POR DEFINIR] Foto de la zona de cardio" }
+  ]
+}
