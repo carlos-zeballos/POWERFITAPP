@@ -10,6 +10,7 @@
     "migrate": "dotenv -e ../../.env -- prisma migrate deploy",
     "migrate:dev": "dotenv -e ../../.env -- prisma migrate dev",
     "seed": "tsx --env-file=../../.env prisma/seed.ts",
+    "backfill:attendance-codes": "tsx --env-file=../../.env prisma/backfill-attendance-codes.ts",
     "postinstall": "prisma generate",
     "test": "dotenv -e ../../.env -- vitest run"
   },

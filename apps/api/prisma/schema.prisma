@@ -21,30 +21,77 @@ enum NoticeKind {
   BROADCAST
 }
 
+enum AttendanceSource {
+  QR
+  MANUAL
+}
+
+enum AttendanceStatus {
+  VALID
+  VOID
+}
+
+enum AttendanceAuditAction {
+  CREATED
+  VOIDED
+  CORRECTED
+}
+
+enum PointEntryType {
+  ATTENDANCE
+  WEEKLY_GOAL
+  STREAK_MILESTONE
+  ON_TIME_RENEWAL
+  ADJUSTMENT
+  REDEMPTION
+}
+
+enum RedemptionStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 model User {
-  id           String             @id @default(cuid())
-  email        String             @unique
-  passwordHash String
-  role         Role
-  name         String
-  tokenVersion Int                @default(0)
-  member       Member?
-  pushSubs     PushSubscription[]
-  createdAt    DateTime           @default(now())
+  id                  String             @id @default(cuid())
+  email               String             @unique
+  passwordHash        String
+  role                Role
+  name                String
+  tokenVersion        Int                @default(0)
+  member              Member?
+  pushSubs            PushSubscription[]
+  attendancesCreated  Attendance[]       @relation("AttendanceCreatedBy")
+  attendanceAudits    AttendanceAudit[]  @relation("AttendanceAuditedBy")
+  pointEntries        PointLedger[]      @relation("PointCreatedBy")
+  redemptionsApproved Redemption[]       @relation("RedemptionApprovedBy")
+  memberAudits        MemberAudit[]      @relation("MemberAuditedBy")
+  createdAt           DateTime           @default(now())
 }
 
 /// Datos personales mínimos (Ley 29733): nombre, teléfono, correo opcional y fecha de consentimiento.
 model Member {
-  id          String       @id @default(cuid())
-  fullName    String
-  phone       String
-  email       String?
-  consentAt   DateTime
-  userId      String?      @unique
-  user        User?        @relation(fields: [userId], references: [id])
-  memberships Membership[]
-  notices     Notice[]
-  createdAt   DateTime     @default(now())
+  id               String        @id @default(cuid())
+  fullName         String
+  phone            String
+  email            String?
+  consentAt        DateTime
+  loyaltyConsentAt DateTime?
+  loyaltyAlias     String?
+  attendanceCode   String?       @unique
+  userId           String?       @unique
+  user             User?         @relation(fields: [userId], references: [id])
+  memberships      Membership[]
+  notices          Notice[]
+  attendances      Attendance[]
+  streakState      StreakState?
+  streakWeeks      StreakWeek[]
+  pointEntries     PointLedger[]
+  badges           MemberBadge[]
+  redemptions      Redemption[]
+  audits           MemberAudit[]
+  createdAt        DateTime      @default(now())
 }
 
 model Plan {
@@ -130,7 +177,7 @@ model JobRun {
 
 model ManualHours {
   id        String   @id @default(cuid())
-  weekStart DateTime @db.Date @unique
+  weekStart DateTime @unique @db.Date
   hours     Decimal  @db.Decimal(5, 1)
 }
 
@@ -139,4 +186,162 @@ model Baseline {
   key   String @id
   value Float
   label String
+}
+
+/// One human-validated gym visit per member and Lima calendar day.
+model Attendance {
+  id          String            @id @default(cuid())
+  memberId    String
+  member      Member            @relation(fields: [memberId], references: [id])
+  attendedOn  DateTime          @db.Date
+  checkedAt   DateTime          @default(now())
+  source      AttendanceSource
+  status      AttendanceStatus  @default(VALID)
+  createdById String
+  createdBy   User              @relation("AttendanceCreatedBy", fields: [createdById], references: [id])
+  voidedAt    DateTime?
+  audits      AttendanceAudit[]
+
+  @@unique([memberId, attendedOn])
+  @@index([attendedOn, status])
+}
+
+/// Immutable trail for attendance creation, voiding, and correction.
+model AttendanceAudit {
+  id           String                @id @default(cuid())
+  attendanceId String
+  attendance   Attendance            @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  action       AttendanceAuditAction
+  reason       String?
+  beforeData   Json?
+  afterData    Json?
+  actorId      String
+  actor        User                  @relation("AttendanceAuditedBy", fields: [actorId], references: [id])
+  createdAt    DateTime              @default(now())
+
+  @@index([attendanceId, createdAt])
+}
+
+/// Single configurable loyalty policy; week boundaries are Monday-Sunday in America/Lima.
+model LoyaltySettings {
+  id              String   @id @default("default")
+  weeklyGoal      Int      @default(3)
+  freezesPerMonth Int      @default(1)
+  riskDaysLeft    Int      @default(2)
+  quietStartHour  Int      @default(22)
+  quietEndHour    Int      @default(7)
+  updatedAt       DateTime @updatedAt
+}
+
+/// Persisted projection; it can always be rebuilt from Attendance and LoyaltySettings.
+model StreakState {
+  memberId           String    @id
+  member             Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  currentWeeks       Int       @default(0)
+  bestWeeks          Int       @default(0)
+  lastQualifyingWeek DateTime? @db.Date
+  updatedAt          DateTime  @updatedAt
+}
+
+model StreakWeek {
+  id              String   @id @default(cuid())
+  memberId        String
+  member          Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  weekStart       DateTime @db.Date
+  attendanceCount Int      @default(0)
+  metGoal         Boolean  @default(false)
+  freezeUsed      Boolean  @default(false)
+  calculatedAt    DateTime @default(now())
+
+  @@unique([memberId, weekStart])
+  @@index([weekStart])
+}
+
+/// Owner-editable, provisional point rules. Values are never applied by the client.
+model PointRule {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  points      Int
+  active      Boolean  @default(true)
+  provisional Boolean  @default(true)
+  metadata    Json?
+  updatedAt   DateTime @updatedAt
+}
+
+/// Append-only ledger. sourceKey enforces idempotency for attendance and weekly bonuses.
+model PointLedger {
+  id          String         @id @default(cuid())
+  memberId    String
+  member      Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  type        PointEntryType
+  amount      Int
+  reason      String
+  referenceId String?
+  sourceKey   String         @unique
+  createdById String?
+  createdBy   User?          @relation("PointCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime       @default(now())
+
+  @@index([memberId, createdAt])
+}
+
+model Badge {
+  id          String        @id @default(cuid())
+  name        String        @unique
+  description String
+  pointFloor  Int?
+  streakWeeks Int?
+  active      Boolean       @default(true)
+  members     MemberBadge[]
+}
+
+model MemberBadge {
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  badgeId   String
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  awardedAt DateTime @default(now())
+
+  @@id([memberId, badgeId])
+}
+
+model Reward {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String
+  pointsCost  Int
+  active      Boolean      @default(true)
+  redemptions Redemption[]
+}
+
+model Redemption {
+  id           String           @id @default(cuid())
+  memberId     String
+  member       Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  rewardId     String
+  reward       Reward           @relation(fields: [rewardId], references: [id])
+  pointsCost   Int
+  status       RedemptionStatus @default(REQUESTED)
+  note         String?
+  requestedAt  DateTime         @default(now())
+  approvedAt   DateTime?
+  approvedById String?
+  approvedBy   User?            @relation("RedemptionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([memberId, status])
+}
+
+model MemberAudit {
+  id         String   @id @default(cuid())
+  memberId   String
+  member     Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  action     String
+  reason     String?
+  actorId    String
+  actor      User     @relation("MemberAuditedBy", fields: [actorId], references: [id])
+  beforeData Json?
+  afterData  Json?
+  createdAt  DateTime @default(now())
+
+  @@index([memberId, createdAt])
 }

@@ -7,6 +7,9 @@ import { p95 } from '../metrics.js';
 import { pushToUser } from '../push.js';
 import { runAlerts } from '../alerts.js';
 import { membersWithStatus } from './staff.js';
+import { loyaltyEnabled } from '../loyalty.js';
+import { loyaltySettings, recalculateAllStreaks } from '../streaks.js';
+import { newAttendanceCode } from '../attendance-code.js';
 
 export const owner = Router();
 const isOwner = requireRole('OWNER');
@@ -26,7 +29,9 @@ export async function kpis(ref = today()) {
   const churned = await db.membership.count({
     where: { next: null, endDate: { gte: addDays(from, -GRACE), lt: addDays(ref, -GRACE) } },
   });
-  const base = await db.membership.count({ where: { startDate: { lte: from }, endDate: { gte: from }, cancelledAt: null } });
+  const base = await db.membership.count({
+    where: { startDate: { lte: from }, endDate: { gte: from }, cancelledAt: null },
+  });
   const hours = await db.manualHours.findMany({ orderBy: { weekStart: 'desc' }, take: 4 });
   const baseline = Object.fromEntries((await db.baseline.findMany()).map((b) => [b.key, b.value]));
   return {
@@ -47,12 +52,65 @@ export async function kpis(ref = today()) {
 
 owner.get('/kpis', isOwner, async (_req, res) => res.json(await kpis()));
 
+owner.get('/loyalty/settings', isOwner, async (_req, res) => {
+  if (!loyaltyEnabled()) return void res.status(404).json({ error: 'No encontrado' });
+  res.json(await loyaltySettings());
+});
+
+owner.patch('/loyalty/settings', isOwner, async (req, res) => {
+  if (!loyaltyEnabled()) return void res.status(404).json({ error: 'No encontrado' });
+  const body = z
+    .object({
+      weeklyGoal: z.number().int().min(1).max(7).optional(),
+      freezesPerMonth: z.number().int().min(0).max(4).optional(),
+      riskDaysLeft: z.number().int().min(1).max(6).optional(),
+      quietStartHour: z.number().int().min(0).max(23).optional(),
+      quietEndHour: z.number().int().min(0).max(23).optional(),
+    })
+    .refine((value) => Object.keys(value).length > 0, 'Indica al menos un valor')
+    .parse(req.body);
+  res.json(
+    await db.loyaltySettings.upsert({ where: { id: 'default' }, create: { id: 'default', ...body }, update: body }),
+  );
+});
+
+owner.post('/loyalty/recalculate', isOwner, async (_req, res) => {
+  if (!loyaltyEnabled()) return void res.status(404).json({ error: 'No encontrado' });
+  const rows = await recalculateAllStreaks();
+  res.json({ members: rows.length });
+});
+
+owner.post('/loyalty/members/:id/regenerate-code', isOwner, async (req, res) => {
+  if (!loyaltyEnabled()) return void res.status(404).json({ error: 'No encontrado' });
+  const { reason } = z.object({ reason: z.string().trim().min(3).max(240) }).parse(req.body);
+  const member = await db.member.findUniqueOrThrow({ where: { id: req.params.id as string } });
+  const attendanceCode = await newAttendanceCode(db, member.id);
+  await db.$transaction([
+    db.member.update({ where: { id: member.id }, data: { attendanceCode } }),
+    db.memberAudit.create({
+      data: {
+        memberId: member.id,
+        action: 'ATTENDANCE_CODE_REGENERATED',
+        reason,
+        actorId: req.user.id,
+        beforeData: { attendanceCode: member.attendanceCode },
+        afterData: { attendanceCode },
+      },
+    }),
+  ]);
+  res.json({ attendanceCode });
+});
+
 owner.post('/manual-hours', isOwner, async (req, res) => {
   const b = z.object({ weekStart: z.string().date(), hours: z.number().min(0).max(168) }).parse(req.body);
   const weekStart = new Date(b.weekStart);
-  res
-    .status(201)
-    .json(await db.manualHours.upsert({ where: { weekStart }, create: { weekStart, hours: b.hours }, update: { hours: b.hours } }));
+  res.status(201).json(
+    await db.manualHours.upsert({
+      where: { weekStart },
+      create: { weekStart, hours: b.hours },
+      update: { hours: b.hours },
+    }),
+  );
 });
 
 /** Ejecución manual del motor; la fecha simulada solo fuera de producción (demo de 7/3/0 días). */
@@ -73,16 +131,31 @@ owner.post('/broadcasts', isOwner, async (req, res) => {
     .extend({ title: z.string().trim().min(3).max(80), body: z.string().trim().min(3).max(500) })
     .parse(req.body);
   const targets = (await membersWithStatus()).filter(
-    (m) => m.membership && (!b.status || m.membership.status === b.status) && (!b.planId || m.membership.planId === b.planId),
+    (m) =>
+      m.membership &&
+      (!b.status || m.membership.status === b.status) &&
+      (!b.planId || m.membership.planId === b.planId),
   );
   const bc = await db.broadcast.create({
-    data: { title: b.title, body: b.body, segment: { status: b.status ?? null, planId: b.planId ?? null }, sentCount: targets.length },
+    data: {
+      title: b.title,
+      body: b.body,
+      segment: { status: b.status ?? null, planId: b.planId ?? null },
+      sentCount: targets.length,
+    },
   });
   await db.notice.createMany({
-    data: targets.map((m) => ({ memberId: m.id, broadcastId: bc.id, kind: 'BROADCAST' as const, title: b.title, body: b.body })),
+    data: targets.map((m) => ({
+      memberId: m.id,
+      broadcastId: bc.id,
+      kind: 'BROADCAST' as const,
+      title: b.title,
+      body: b.body,
+    })),
   });
   // shortcut: push secuencial dentro de la petición; mover a cola si los envíos superan ~1 000.
-  for (const m of targets) if (m.userId) await pushToUser(m.userId, { title: b.title, body: b.body, url: '/app/socio' });
+  for (const m of targets)
+    if (m.userId) await pushToUser(m.userId, { title: b.title, body: b.body, url: '/app/socio' });
   res.status(201).json(bc);
 });
 
@@ -95,10 +168,24 @@ type Cell = string | number | null | undefined;
 export const csv = (rows: Cell[][]) =>
   '﻿' +
   rows
-    .map((r) => r.map((v) => '"' + String(v ?? '').replace(/"/g, '""').replace(/^[=+\-@]/, "'$&") + '"').join(';'))
+    .map((r) =>
+      r
+        .map(
+          (v) =>
+            '"' +
+            String(v ?? '')
+              .replace(/"/g, '""')
+              .replace(/^[=+\-@]/, "'$&") +
+            '"',
+        )
+        .join(';'),
+    )
     .join('\r\n');
 const send = (res: Response, name: string, body: string) =>
-  res.type('text/csv; charset=utf-8').attachment(`${name}-${iso(today())}.csv`).send(body);
+  res
+    .type('text/csv; charset=utf-8')
+    .attachment(`${name}-${iso(today())}.csv`)
+    .send(body);
 
 owner.get('/reports/members.csv', isOwner, async (_req, res) => {
   const rows = await membersWithStatus();
@@ -107,24 +194,51 @@ owner.get('/reports/members.csv', isOwner, async (_req, res) => {
     'socios',
     csv([
       ['Socio', 'Celular', 'Plan', 'Inicio', 'Vencimiento', 'Estado', 'Días restantes'],
-      ...rows.map((r) => [r.fullName, r.phone, r.membership?.plan, r.membership?.startDate, r.membership?.endDate, r.membership?.status, r.membership?.daysLeft]),
+      ...rows.map((r) => [
+        r.fullName,
+        r.phone,
+        r.membership?.plan,
+        r.membership?.startDate,
+        r.membership?.endDate,
+        r.membership?.status,
+        r.membership?.daysLeft,
+      ]),
     ]),
   );
 });
 
 owner.get('/reports/notices.csv', isOwner, async (_req, res) => {
-  const rows = await db.notice.findMany({ orderBy: { createdAt: 'desc' }, take: 5000, include: { member: { select: { fullName: true } } } });
+  const rows = await db.notice.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 5000,
+    include: { member: { select: { fullName: true } } },
+  });
   send(
     res,
     'avisos',
     csv([
       ['Fecha', 'Socio', 'Tipo', 'Título', 'Push', 'Leído', 'WhatsApp'],
-      ...rows.map((n) => [n.createdAt.toISOString(), n.member.fullName, n.kind, n.title, n.pushedAt?.toISOString(), n.readAt?.toISOString(), n.waSentAt?.toISOString()]),
+      ...rows.map((n) => [
+        n.createdAt.toISOString(),
+        n.member.fullName,
+        n.kind,
+        n.title,
+        n.pushedAt?.toISOString(),
+        n.readAt?.toISOString(),
+        n.waSentAt?.toISOString(),
+      ]),
     ]),
   );
 });
 
 owner.get('/reports/kpis.csv', isOwner, async (_req, res) => {
   const k = await kpis();
-  send(res, 'indicadores', csv([['Indicador', 'Línea base', 'Actual'], ...Object.entries(k.current).map(([key, v]) => [key, k.baseline[key], v])]));
+  send(
+    res,
+    'indicadores',
+    csv([
+      ['Indicador', 'Línea base', 'Actual'],
+      ...Object.entries(k.current).map(([key, v]) => [key, k.baseline[key], v]),
+    ]),
+  );
 });
