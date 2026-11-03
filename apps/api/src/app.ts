@@ -14,6 +14,7 @@ import { staff } from './routes/staff.js';
 import { member } from './routes/member.js';
 import { owner } from './routes/owner.js';
 import { loyalty } from './routes/loyalty.js';
+import { loyaltyEnabled } from './loyalty.js';
 
 export const app = express();
 app.set('trust proxy', 1);
@@ -45,6 +46,7 @@ app.use(
 );
 
 app.get('/api/v1/health', (_req, res) => res.json({ ok: true }));
+app.get('/api/v1/features', (_req, res) => res.json({ loyalty: loyaltyEnabled() }));
 app.use('/api/v1/auth', auth);
 app.use('/api/v1', staff, member, owner);
 app.use('/api/v1', loyalty);

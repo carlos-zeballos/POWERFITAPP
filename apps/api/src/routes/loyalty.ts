@@ -188,7 +188,14 @@ loyalty.get('/loyalty/me', member, async (req, res) => {
     recalculateStreak(result.member.id),
     db.pointLedger.aggregate({ where: { memberId: result.member.id }, _sum: { amount: true } }),
   ]);
-  res.json({ streak, points: points._sum.amount ?? 0 });
+  const qrToken = jwt.sign({ purpose: 'loyalty-checkin', memberId: result.member.id }, qrSecret(), {
+    expiresIn: '60s',
+  });
+  const identity = await db.member.findUniqueOrThrow({
+    where: { id: result.member.id },
+    select: { attendanceCode: true },
+  });
+  res.json({ streak, points: points._sum.amount ?? 0, attendanceCode: identity.attendanceCode, qrToken });
 });
 
 const correction = z.object({ attendedOn: z.string().date().optional(), reason: z.string().trim().min(3).max(240) });
