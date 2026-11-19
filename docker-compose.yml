@@ -5,7 +5,7 @@ services:
       POSTGRES_USER: powerfit
       POSTGRES_PASSWORD: powerfit
       POSTGRES_DB: powerfit
-    ports: ["5432:5432"]
+    ports: ['5432:5432']
     volumes: [pgdata:/var/lib/postgresql/data]
 volumes:
   pgdata:

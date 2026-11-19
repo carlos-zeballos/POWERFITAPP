@@ -1,29 +1,24 @@
 {
-  "_nota": "Archivo editable por el gimnasio. Todo valor con [POR DEFINIR] es un marcador: reemplazar con datos reales antes de publicar.",
-  "nombre": "PowerFit",
+  "nombre": "POWER FIT",
   "ciudad": "Arequipa",
-  "eslogan": "Entrena con poder. Vuelve cada día.",
+  "eslogan": "¡Ponte en forma con nosotros!",
   "url": "https://powerfit.pe",
-  "telefonoWhatsApp": "51900000000",
-  "telefonoVisible": "[POR DEFINIR] 900 000 000",
-  "email": "[POR DEFINIR]@powerfit.pe",
-  "direccion": "[POR DEFINIR] Av. Ejemplo 123, Arequipa",
+  "telefonoWhatsApp": "51913678066",
+  "telefonoVisible": "+51 913 678 066",
+  "whatsappUrl": "https://wa.me/51913678066",
+  "email": "",
+  "direccion": "Calle Chullo 802, Yanahuara",
+  "googleMapsUrl": "https://maps.app.goo.gl/7L56n25ncTCCCQRr8",
+  "googleMapsEmbedUrl": "https://www.google.com/maps?q=Calle%20Chullo%20802%2C%20Yanahuara%2C%20Arequipa&output=embed",
   "geo": { "lat": -16.3989, "lng": -71.535 },
-  "redes": { "instagram": "https://instagram.com/powerfit", "facebook": "https://facebook.com/powerfit" },
-  "horarios": [
-    { "dias": "Lunes a viernes", "horas": "[POR DEFINIR] 05:00 – 22:00" },
-    { "dias": "Sábado", "horas": "[POR DEFINIR] 07:00 – 18:00" },
-    { "dias": "Domingo y feriados", "horas": "[POR DEFINIR] 08:00 – 13:00" }
-  ],
-  "planes": [
-    { "nombre": "Mensual", "dias": 30, "precio": null, "detalle": "Acceso libre a sala de máquinas y peso libre." },
-    { "nombre": "Trimestral", "dias": 90, "precio": null, "detalle": "Tres meses de constancia.", "destacado": true },
-    { "nombre": "Semestral", "dias": 180, "precio": null, "detalle": "Medio año para transformar tu rutina." },
-    { "nombre": "Anual", "dias": 365, "precio": null, "detalle": "El compromiso completo." }
-  ],
+  "redes": {
+    "facebook": "https://www.facebook.com/profile.php?id=61551735905325",
+    "instagram": "https://www.instagram.com/powerfit.arequipa/",
+    "tiktok": "https://www.tiktok.com/@powerfit.arequipa"
+  },
   "galeria": [
-    { "src": "/galeria/sala.svg", "alt": "[POR DEFINIR] Foto de la sala de pesas" },
-    { "src": "/galeria/funcional.svg", "alt": "[POR DEFINIR] Foto del área funcional" },
-    { "src": "/galeria/cardio.svg", "alt": "[POR DEFINIR] Foto de la zona de cardio" }
+    { "src": "/galeria/sala.svg", "alt": "Zona de máquinas de POWER FIT" },
+    { "src": "/galeria/funcional.svg", "alt": "Entrenamiento en POWER FIT" },
+    { "src": "/galeria/cardio.svg", "alt": "Ambiente de POWER FIT" }
   ]
 }

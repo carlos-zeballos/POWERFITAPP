@@ -37,8 +37,6 @@ Todos viven bajo `/api/v1`. Las rutas protegidas requieren la cookie de acceso.
 | `GET /me` | MEMBER | Membresía del socio actual. |
 | `GET /me/notices` | MEMBER | Bandeja del socio (máximo 50). |
 | `POST /me/notices/:id/read` | MEMBER | Marca un aviso propio como leído. |
-| `GET /push/key` | Público | Clave pública VAPID. |
-| `POST /push/subscribe` | Todos | Registra o actualiza Web Push. |
 | `GET /kpis` | OWNER | Indicadores y línea base. |
 | `POST /manual-hours` | OWNER | Registra horas manuales semanales. |
 | `POST /jobs/alerts` | OWNER | Ejecuta alertas; fecha simulada solo no productiva. |

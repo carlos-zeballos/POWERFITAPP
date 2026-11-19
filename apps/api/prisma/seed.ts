@@ -2,8 +2,9 @@
 import { PrismaClient, type NoticeKind } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
-import gym from '../../web/src/config/gym.json' with { type: 'json' };
 import { addDays, today } from '../src/dates.js';
+import { upsertPowerFitPublicContent } from '../src/public-content.js';
+import { createMembershipMissions } from '../src/missions.js';
 
 const db = new PrismaClient();
 const NOMBRES = [
@@ -57,18 +58,17 @@ async function main() {
     db.loyaltySettings.deleteMany(),
     db.notice.deleteMany(),
     db.broadcast.deleteMany(),
-    db.pushSubscription.deleteMany(),
     db.membership.deleteMany(),
     db.member.deleteMany(),
     db.user.deleteMany(),
+    db.openingHour.deleteMany(),
     db.plan.deleteMany(),
     db.manualHours.deleteMany(),
     db.baseline.deleteMany(),
     db.jobRun.deleteMany(),
   ]);
-  const plans = await Promise.all(
-    gym.planes.map((p) => db.plan.create({ data: { name: p.nombre, durationDays: p.dias, price: p.precio ?? 0 } })),
-  );
+  await upsertPowerFitPublicContent(db);
+  const plans = await db.plan.findMany({ orderBy: { sortOrder: 'asc' } });
   await db.loyaltySettings.create({ data: { id: 'default' } });
   await db.pointRule.createMany({
     data: [
@@ -93,6 +93,8 @@ async function main() {
       fullName: 'Socio Demo',
       phone: '900000001',
       consentAt: new Date(),
+      loyaltyConsentAt: new Date(),
+      attendanceCode: '9000',
       userId: socio.id,
       memberships: { create: { planId: plans[0].id, startDate: addDays(ref, -22), endDate: addDays(ref, 7) } },
     },
@@ -108,7 +110,6 @@ async function main() {
       title: string;
       body: string;
       createdAt: Date;
-      pushedAt: Date | null;
     }[] = [];
   for (let i = 0; i < 479; i++) {
     const id = randomUUID();
@@ -117,6 +118,8 @@ async function main() {
       fullName: `${pick(NOMBRES)} ${pick(APELLIDOS)} ${String.fromCharCode(65 + (i % 26))}.`,
       phone: `9000${String(10000 + i).slice(-5)}`,
       consentAt: new Date(),
+      loyaltyConsentAt: new Date(),
+      attendanceCode: String(1000 + i),
     });
     const plan = rnd() < 0.7 ? plans[0] : pick(plans);
     const end = addDays(ref, Math.floor(rnd() * 120) - 60);
@@ -140,7 +143,6 @@ async function main() {
         title: 'Tu membresía vence en 7 días',
         body: 'Aviso histórico (semilla).',
         createdAt: addDays(end, -7),
-        pushedAt: rnd() < 0.52 ? addDays(end, -7) : null,
       });
       const r = rnd(); // distribución de la línea base: 38 % a tiempo, 26 % con retraso, 36 % no renueva
       if (r < 0.64) {
@@ -165,6 +167,9 @@ async function main() {
   await db.member.createMany({ data: members });
   await db.membership.createMany({ data: memberships.filter((m) => !m.previousId) });
   await db.membership.createMany({ data: memberships.filter((m) => m.previousId) });
+  for (const membership of await db.membership.findMany({ include: { plan: true } })) {
+    await createMembershipMissions(db, membership);
+  }
   await db.notice.createMany({ data: notices });
   await db.manualHours.createMany({
     data: [0, 1, 2, 3].map((w) => ({ weekStart: addDays(ref, -7 * (w + 1)), hours: 8 })),

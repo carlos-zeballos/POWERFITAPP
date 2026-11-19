@@ -8,6 +8,7 @@ import { db } from '../db.js';
 import { daysLeft, iso, today } from '../dates.js';
 import { loyaltyEnabled } from '../loyalty.js';
 import { loyaltySettings, recalculateStreak } from '../streaks.js';
+import { missionsForMembership } from '../missions.js';
 
 export const loyalty = Router();
 const staff = requireRole('OWNER', 'STAFF');
@@ -39,13 +40,21 @@ async function eligibleMembership(memberId: string, ref = today()) {
 }
 
 async function requireEligibleMember(memberId: string, ref = today()) {
-  const [m, membership] = await Promise.all([
-    db.member.findUnique({ where: { id: memberId }, select: { id: true, fullName: true, loyaltyConsentAt: true } }),
+  const [m, membership, next] = await Promise.all([
+    db.member.findUnique({ where: { id: memberId }, select: { id: true, fullName: true } }),
     eligibleMembership(memberId, ref),
+    db.membership.findFirst({
+      where: { memberId, cancelledAt: null, startDate: { gt: ref } },
+      orderBy: { startDate: 'asc' },
+    }),
   ]);
   if (!m) return { error: 'Socio no encontrado' } as const;
-  if (!m.loyaltyConsentAt) return { error: 'El socio no autorizó fidelización' } as const;
-  if (!membership) return { error: 'La membresía no permite registrar asistencia' } as const;
+  if (!membership)
+    return {
+      error: next
+        ? `El próximo plan inicia el ${iso(next.startDate)}; no tiene una membresía vigente hoy.`
+        : 'No tiene una membresía vigente hoy.',
+    } as const;
   return { member: m, membership } as const;
 }
 
@@ -69,7 +78,6 @@ loyalty.get('/loyalty/members', staff, async (req, res) => {
   const { q } = z.object({ q: z.string().trim().min(2).max(60) }).parse(req.query);
   const rows = await db.member.findMany({
     where: {
-      loyaltyConsentAt: { not: null },
       OR: [{ fullName: { contains: q, mode: 'insensitive' } }, { phone: { contains: q } }],
     },
     orderBy: { fullName: 'asc' },
@@ -184,9 +192,10 @@ loyalty.post('/loyalty/check-ins', staff, checkinLimit, async (req, res) => {
 loyalty.get('/loyalty/me', member, async (req, res) => {
   const result = await requireEligibleMember(req.user.memberId!);
   if ('error' in result) return void res.status(409).json(result);
-  const [streak, points] = await Promise.all([
+  const [streak, points, missions] = await Promise.all([
     recalculateStreak(result.member.id),
     db.pointLedger.aggregate({ where: { memberId: result.member.id }, _sum: { amount: true } }),
+    missionsForMembership(db, result.membership),
   ]);
   const qrToken = jwt.sign({ purpose: 'loyalty-checkin', memberId: result.member.id }, qrSecret(), {
     expiresIn: '60s',
@@ -195,7 +204,19 @@ loyalty.get('/loyalty/me', member, async (req, res) => {
     where: { id: result.member.id },
     select: { attendanceCode: true },
   });
-  res.json({ streak, points: points._sum.amount ?? 0, attendanceCode: identity.attendanceCode, qrToken });
+  res.json({
+    streak,
+    points: points._sum.amount ?? 0,
+    attendanceCode: identity.attendanceCode,
+    qrToken,
+    subscription: {
+      plan: result.membership.plan.name,
+      startsOn: iso(result.membership.startDate),
+      endsOn: iso(result.membership.endDate),
+      registeredAt: result.membership.createdAt,
+    },
+    missions,
+  });
 });
 
 const correction = z.object({ attendedOn: z.string().date().optional(), reason: z.string().trim().min(3).max(240) });

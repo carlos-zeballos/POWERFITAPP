@@ -14,6 +14,7 @@ import { staff } from './routes/staff.js';
 import { member } from './routes/member.js';
 import { owner } from './routes/owner.js';
 import { loyalty } from './routes/loyalty.js';
+import { publicSite } from './routes/public.js';
 import { loyaltyEnabled } from './loyalty.js';
 
 export const app = express();
@@ -25,7 +26,7 @@ app.use(
       directives: {
         'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         'font-src': ["'self'", 'https://fonts.gstatic.com'],
-        'frame-src': ['https://www.openstreetmap.org'],
+        'frame-src': ['https://www.google.com'],
         'img-src': ["'self'", 'data:'],
       },
     },
@@ -48,6 +49,7 @@ app.use(
 app.get('/api/v1/health', (_req, res) => res.json({ ok: true }));
 app.get('/api/v1/features', (_req, res) => res.json({ loyalty: loyaltyEnabled() }));
 app.use('/api/v1/auth', auth);
+app.use('/api/v1', publicSite);
 app.use('/api/v1', staff, member, owner);
 app.use('/api/v1', loyalty);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'No encontrado' }));

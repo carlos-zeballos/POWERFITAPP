@@ -53,6 +53,11 @@ enum RedemptionStatus {
   CANCELLED
 }
 
+enum PlanCategory {
+  MACHINES
+  DANCE
+}
+
 model User {
   id                  String             @id @default(cuid())
   email               String             @unique
@@ -61,7 +66,6 @@ model User {
   name                String
   tokenVersion        Int                @default(0)
   member              Member?
-  pushSubs            PushSubscription[]
   attendancesCreated  Attendance[]       @relation("AttendanceCreatedBy")
   attendanceAudits    AttendanceAudit[]  @relation("AttendanceAuditedBy")
   pointEntries        PointLedger[]      @relation("PointCreatedBy")
@@ -95,13 +99,28 @@ model Member {
 }
 
 model Plan {
-  id           String       @id @default(cuid())
-  name         String       @unique
-  durationDays Int
+  id            String       @id @default(cuid())
+  name          String       @unique
+  category      PlanCategory @default(MACHINES)
+  durationDays  Int
+  /// Meses calendario de vigencia; null para planes diarios u otras duraciones por días.
+  durationMonths Int?
   /// Precio referencial (solo informativo, sin cobro en línea).
-  price        Decimal      @db.Decimal(8, 2)
-  active       Boolean      @default(true)
-  memberships  Membership[]
+  price         Decimal      @db.Decimal(8, 2)
+  description   String       @default("")
+  promotion     String?
+  highlighted   Boolean      @default(false)
+  publicVisible Boolean      @default(false)
+  sortOrder     Int          @default(0)
+  active        Boolean      @default(true)
+  memberships   Membership[]
+}
+
+model OpeningHour {
+  id        String @id @default(cuid())
+  days      String @unique
+  hours     String
+  sortOrder Int    @default(0)
 }
 
 model Membership {
@@ -120,8 +139,26 @@ model Membership {
   onTime      Boolean?
   createdAt   DateTime    @default(now())
   notices     Notice[]
+  missions    MembershipMission[]
 
   @@index([endDate])
+}
+
+/// Snapshot de metas por suscripción: las reglas futuras nunca reescriben un contrato ya iniciado.
+model MembershipMission {
+  id           String     @id @default(cuid())
+  membershipId String
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  level        Int
+  title        String
+  description  String
+  target       Int
+  windowStart  DateTime   @db.Date
+  deadline     DateTime   @db.Date
+  createdAt    DateTime   @default(now())
+
+  @@unique([membershipId, level])
+  @@index([membershipId, deadline])
 }
 
 model Notice {
@@ -137,7 +174,6 @@ model Notice {
   body         String
   createdAt    DateTime    @default(now())
   readAt       DateTime?
-  pushedAt     DateTime?
   waSentAt     DateTime?
 
   @@unique([membershipId, kind])
@@ -152,15 +188,6 @@ model Broadcast {
   sentCount Int
   createdAt DateTime @default(now())
   notices   Notice[]
-}
-
-model PushSubscription {
-  id       String @id @default(cuid())
-  userId   String
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endpoint String @unique
-  p256dh   String
-  auth     String
 }
 
 /// Registro idempotente de tareas programadas: una fila por tarea y día.

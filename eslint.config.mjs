@@ -6,5 +6,19 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   { files: ['apps/web/**/*.tsx'], plugins: { 'react-hooks': hooks }, rules: hooks.configs.recommended.rules },
-  { files: ['scripts/**', 'apps/web/public/**'], languageOptions: { globals: { process: 'readonly', console: 'readonly', self: 'readonly', clients: 'readonly', caches: 'readonly', fetch: 'readonly', URL: 'readonly', Response: 'readonly' } } },
+  {
+    files: ['scripts/**', 'apps/web/public/**'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        self: 'readonly',
+        clients: 'readonly',
+        caches: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        Response: 'readonly',
+      },
+    },
+  },
 );

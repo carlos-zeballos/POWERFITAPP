@@ -1,16 +1,13 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import request from 'supertest';
 
-vi.mock('web-push', () => ({ default: { setVapidDetails: vi.fn(), sendNotification: vi.fn().mockResolvedValue({}) } }));
-process.env.VAPID_PUBLIC_KEY ||= 'test';
-process.env.VAPID_PRIVATE_KEY ||= 'test';
-
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/db.js');
 const { runAlerts } = await import('../src/alerts.js');
-const { addDays, today } = await import('../src/dates.js');
+const { addDays, iso, membershipEndDate, today } = await import('../src/dates.js');
 const { csv } = await import('../src/routes/owner.js');
 const { recalculateStreak } = await import('../src/streaks.js');
+const { missionSnapshots, missionsForMembership } = await import('../src/missions.js');
 
 const login = async (who: string) => {
   const a = request.agent(app);
@@ -40,21 +37,94 @@ describe('autenticación y roles', () => {
   });
 });
 
+describe('catálogo público', () => {
+  it('lee planes y horarios de la base de datos, y refleja una edición del propietario', async () => {
+    const first = await request(app).get('/api/v1/public/catalog').expect(200);
+    expect(first.body.plans).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'Máquinas | 1 año', price: '1000', promotion: '1 mes gratis' }),
+        expect.objectContaining({ name: 'Danza | 3 meses', price: '180', promotion: 'Cupos y horarios limitados' }),
+      ]),
+    );
+    expect(first.body.hours.map((hour: { days: string }) => hour.days)).toEqual([
+      'Lunes a viernes',
+      'Sábados',
+      'Domingos',
+    ]);
+
+    const plan = first.body.plans.find((item: { name: string }) => item.name === 'Máquinas | 1 día');
+    await propietario.patch(`/api/v1/plans/${plan.id}`).send({ price: 16 }).expect(200);
+    expect(
+      (await request(app).get('/api/v1/public/catalog').expect(200)).body.plans.find(
+        (item: { id: string }) => item.id === plan.id,
+      ).price,
+    ).toBe('16');
+    await propietario.patch(`/api/v1/plans/${plan.id}`).send({ price: 15 }).expect(200);
+  });
+});
+
+describe('vigencias encadenadas', () => {
+  it('calcula los planes mensuales por meses calendario, no por 30 días fijos', () => {
+    expect(iso(membershipEndDate(new Date('2026-01-01T00:00:00Z'), { durationDays: 30, durationMonths: 1 }))).toBe(
+      '2026-01-31',
+    );
+    expect(iso(membershipEndDate(new Date('2026-01-05T00:00:00Z'), { durationDays: 30, durationMonths: 1 }))).toBe(
+      '2026-02-04',
+    );
+  });
+});
+
+describe('misiones por suscripción', () => {
+  it('no crea premios para el plan diario y cierra el plan anual en el mes 12, no en el mes gratis', () => {
+    const base = {
+      id: 'm1',
+      memberId: 'u1',
+      startDate: new Date('2026-01-01T00:00:00Z'),
+      endDate: new Date('2027-01-31T00:00:00Z'),
+    };
+    expect(missionSnapshots({ ...base, plan: { durationDays: 1, durationMonths: null } })).toEqual([]);
+    const annual = missionSnapshots({ ...base, plan: { durationDays: 395, durationMonths: 13 } });
+    expect(annual).toHaveLength(6);
+    expect(annual.at(-1)?.target).toBe(6);
+    expect(annual.at(-1)?.deadline.toISOString().slice(0, 10)).toBe('2026-12-31');
+  });
+
+  it('mantiene bloqueados los niveles posteriores hasta completar el anterior', async () => {
+    const membership = {
+      id: 'sequential-missions',
+      memberId: 'sequential-member',
+      startDate: new Date('2026-01-01T00:00:00Z'),
+      endDate: new Date('2026-01-31T00:00:00Z'),
+      plan: { durationDays: 30, durationMonths: 1 },
+    };
+    const snapshots = missionSnapshots(membership);
+    const fakeDb = {
+      membershipMission: { findMany: vi.fn().mockResolvedValue(snapshots) },
+      attendance: {
+        findMany: vi.fn().mockResolvedValue(
+          Array.from({ length: 6 }, (_, index) => ({
+            attendedOn: new Date(`2026-01-${String(25 + index).padStart(2, '0')}T00:00:00Z`),
+          })),
+        ),
+      },
+    };
+    const missions = await missionsForMembership(fakeDb as never, membership, new Date('2026-01-31T00:00:00Z'));
+    expect(missions[0].state).toBe('IN_PROGRESS');
+    expect(missions[1]).toMatchObject({ progress: 6, target: 6, state: 'LOCKED' });
+  });
+});
+
 describe('motor de alertas', () => {
-  it('socio recibe push y aviso en bandeja a 7, 3 y 0 días, sin duplicados', async () => {
+  it('socio recibe avisos en bandeja a 7, 3 y 0 días, sin duplicados', async () => {
     const sm = await db.member.findFirstOrThrow({
       where: { user: { email: 'socio@powerfit.test' } },
       include: { memberships: true },
-    });
-    await db.pushSubscription.create({
-      data: { userId: sm.userId!, endpoint: 'https://push.example/abc', p256dh: 'k', auth: 'a' },
     });
     const end = sm.memberships[0].endDate;
     for (const d of [7, 7, 3, 0]) await runAlerts(addDays(end, -d));
     const { body } = await socio.get('/api/v1/me/notices').expect(200);
     const mine = await db.notice.findMany({ where: { memberId: sm.id } });
     expect(mine.map((n) => n.kind).sort()).toEqual(['D0', 'D3', 'D7']);
-    expect(mine.every((n) => n.pushedAt)).toBe(true);
     expect(body).toHaveLength(3);
     await socio.post(`/api/v1/me/notices/${body[0].id}/read`).expect(204);
     expect((await db.notice.findUniqueOrThrow({ where: { id: body[0].id } })).readAt).not.toBeNull();
@@ -83,7 +153,11 @@ describe('recepción', () => {
     expect(body.startDate).toBe(addDays(new Date(m.membership.endDate), 1).toISOString().slice(0, 10));
     await recepcion.post(`/api/v1/members/${m.id}/renew`).send({ fromId: m.membership.id }).expect(409);
     const me = await socio.get('/api/v1/me').expect(200);
-    expect(me.body.membership.status).toBe('ACTIVA');
+    // Aunque ya se pagó el siguiente período, la ficha del socio conserva la cobertura actual hasta su vencimiento.
+    expect(me.body.membership.status).toBe('POR_VENCER');
+    const detail = await recepcion.get(`/api/v1/members/${m.id}`).expect(200);
+    expect(detail.body.currentMembership.id).toBe(m.membership.id);
+    expect(detail.body.nextMembership.id).toBe(body.id);
   });
   it('alta de socio exige consentimiento y celular válido', async () => {
     const { body: plans } = await recepcion.get('/api/v1/plans');
@@ -95,10 +169,13 @@ describe('recepción', () => {
       .post('/api/v1/members')
       .send({ fullName: 'Prueba Uno', phone: '12', planId: plans[0].id, consent: true })
       .expect(400);
-    await recepcion
+    const created = await recepcion
       .post('/api/v1/members')
       .send({ fullName: 'Prueba Uno', phone: '900111222', planId: plans[0].id, consent: true })
       .expect(201);
+    expect(created.body.attendanceCode).toMatch(/^\d{4}$/);
+    const lookup = await recepcion.get(`/api/v1/members?q=${created.body.attendanceCode}`).expect(200);
+    expect(lookup.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: created.body.id })]));
   });
 });
 
@@ -133,7 +210,6 @@ describe('fidelizacion', () => {
 
   it('registra QR una sola vez, conserva auditoria y permite anulacion', async () => {
     process.env.LOYALTY_ENABLED = 'true';
-    await socio.post('/api/v1/loyalty/consent').send({ alias: 'Socio Demo' }).expect(204);
     const { body: qr } = await socio.get('/api/v1/loyalty/qr').expect(200);
     const first = await recepcion.post('/api/v1/loyalty/check-ins').send({ qrToken: qr.token }).expect(201);
     expect(first.body.created).toBe(true);

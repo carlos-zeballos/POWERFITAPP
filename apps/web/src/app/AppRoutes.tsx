@@ -4,8 +4,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, Logo, useMe, type Me, type Role } from '../lib';
 import { Socio, Avisos } from './Socio';
 import { Recepcion, Socios } from './Recepcion';
-import { Panel, Comunicados, Planes } from './Owner';
-import { Asistencia, FidelidadOwner, FidelidadSocio } from './Loyalty';
+import { Panel, Comunicados, Misiones, Planes } from './Owner';
+import { Asistencia, FidelidadSocio } from './Loyalty';
+import Privacy from '../site/Privacy';
 
 const HOME: Record<Role, string> = { OWNER: '/app/panel', STAFF: '/app/recepcion', MEMBER: '/app/socio' };
 const NAV: Record<Role, [string, string][]> = {
@@ -22,9 +23,19 @@ const NAV: Record<Role, [string, string][]> = {
     ['/app/recepcion', 'Alertas'],
     ['/app/socios', 'Socios'],
     ['/app/comunicados', 'Avisos'],
+    ['/app/misiones', 'Misiones'],
     ['/app/planes', 'Planes'],
   ],
 };
+
+function ShieldIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className={className}>
+      <path d="M12 3 5 6v5c0 4.4 2.9 8.4 7 10 4.1-1.6 7-5.6 7-10V6l-7-3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
 
 function Login() {
   const qc = useQueryClient();
@@ -87,9 +98,9 @@ function Shell() {
   if (!me.data) return <Navigate to="/ingresar" replace />;
   const items = [...NAV[me.data.role]];
   if (features.data?.loyalty) {
-    if (me.data.role === 'MEMBER') items.push(['/app/fidelidad', 'Racha']);
+    if (me.data.role === 'MEMBER') items.push(['/app/fidelidad', 'Progreso']);
     if (me.data.role === 'STAFF') items.push(['/app/asistencia', 'Asistencia']);
-    if (me.data.role === 'OWNER') items.push(['/app/asistencia', 'Asistencia'], ['/app/rachas', 'Rachas']);
+    if (me.data.role === 'OWNER') items.push(['/app/asistencia', 'Asistencia']);
   }
   async function logout() {
     await api('/auth/logout', {}).catch(() => {});
@@ -111,8 +122,16 @@ function Shell() {
             {t}
           </NavLink>
         ))}
-        <button onClick={logout} className="tap mt-auto text-left text-muted hover:text-white">
-          Salir
+        <NavLink
+          to="/app/privacidad"
+          className={({ isActive }) =>
+            `tap mt-auto flex items-center gap-2 px-3 text-sm ${isActive ? 'text-orange' : 'text-muted hover:text-orange'}`
+          }
+        >
+          <ShieldIcon className="size-4" /> Protección de datos personales
+        </NavLink>
+        <button onClick={logout} className="tap text-left text-muted hover:text-white">
+          Cerrar sesión
         </button>
       </aside>
       <div>
@@ -121,9 +140,19 @@ function Shell() {
             <Logo iso className="h-8 text-orange lg:hidden" label="" />
             <span className="text-sm text-muted">{me.data.name}</span>
           </span>
-          <button onClick={logout} className="tap text-sm text-muted hover:text-white lg:hidden">
-            Salir
-          </button>
+          <span className="flex items-center gap-3">
+            <NavLink
+              to="/app/privacidad"
+              className="tap flex items-center gap-1 text-sm text-muted hover:text-orange"
+              aria-label="Protección de datos personales"
+            >
+              <ShieldIcon className="size-4" />
+              <span className="hidden sm:inline">Protección de datos</span>
+            </NavLink>
+            <button onClick={logout} className="tap text-sm text-muted hover:text-white">
+              Cerrar sesión
+            </button>
+          </span>
         </header>
         <main className="mx-auto max-w-5xl px-4 py-6 lg:px-8">
           <Outlet />
@@ -168,10 +197,11 @@ export default function AppRoutes() {
         <Route path="socios" element={<Socios />} />
         <Route path="panel" element={<Panel />} />
         <Route path="comunicados" element={<Comunicados />} />
+        <Route path="misiones" element={<Misiones />} />
         <Route path="planes" element={<Planes />} />
+        <Route path="privacidad" element={<Privacy inApp />} />
         <Route path="asistencia" element={<Asistencia />} />
         <Route path="fidelidad" element={<FidelidadSocio />} />
-        <Route path="rachas" element={<FidelidadOwner />} />
       </Route>
       <Route path="*" element={<RoleHome />} />
     </Routes>

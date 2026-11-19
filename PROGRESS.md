@@ -14,6 +14,9 @@
 - [x] Iteracion 1: modelo Prisma, migracion y feature flag `LOYALTY_ENABLED`.
 - [x] Iteracion 2: check-in QR/manual, auditoria e idempotencia.
 - [x] Iteracion 3: rachas semanales, congelamientos y recalculo reproducible.
+- [x] Misiones por suscripción: metas escalables, progreso desde asistencias válidas y desbloqueo secuencial por nivel.
+- [x] Recorrido QA local: base reiniciada, un socio por plan y validación de propietario, recepción, socio, avisos y comunicados.
+- [x] Experiencia de misiones: ruta de plataformas en la ficha y progreso del socio; se retiró la meta semanal fija de rachas.
 - [ ] Iteracion 4: libro mayor, reglas, notificaciones y canjes.
 - [ ] Iteracion 5: pantallas, indicadores, CSV y aceptacion.
 
@@ -32,6 +35,7 @@
 
 - La marca usa fondo negro único; naranja `#EC661C`, negro y blanco; display Big Shoulders Stencil Text. Lexend, superficies y colores de estado son supuestos documentados en `apps/web/src/design-tokens.ts` y requieren confirmación del gimnasio.
 - Fechas y estados se calculan desde fechas Lima, no se persisten como estado de membresía.
+- Las misiones se muestran como una línea de tiempo interactiva: cada nivel se consulta al seleccionarlo y requiere completar el nivel anterior para quedar desbloqueado.
 - Renovación oportuna: membresía siguiente registrada antes o el mismo día del vencimiento; baja: sin renovación tras 7 días de gracia; aviso oportuno: D7/D3 recibido al menos dos días antes.
 - PostgreSQL local usa `pg_ctl` de `embedded-postgres`; evita el fallo de `postgres.exe` bajo una cuenta Windows Administrador.
 - Bcryptjs evita dependencias nativas. Las cookies son httpOnly, SameSite Strict, y `tokenVersion` revoca sesiones.

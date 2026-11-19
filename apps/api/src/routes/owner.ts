@@ -4,12 +4,12 @@ import { db } from '../db.js';
 import { addDays, iso, today } from '../dates.js';
 import { requireRole } from '../auth.js';
 import { p95 } from '../metrics.js';
-import { pushToUser } from '../push.js';
 import { runAlerts } from '../alerts.js';
 import { membersWithStatus } from './staff.js';
 import { loyaltyEnabled } from '../loyalty.js';
 import { loyaltySettings, recalculateAllStreaks } from '../streaks.js';
 import { newAttendanceCode } from '../attendance-code.js';
+import { missionsForMembership } from '../missions.js';
 
 export const owner = Router();
 const isOwner = requireRole('OWNER');
@@ -24,7 +24,7 @@ export async function kpis(ref = today()) {
   });
   const onTime = ended.filter((m) => m.next?.onTime).length;
   const timely = ended.filter((m) =>
-    m.notices.some((n) => n.createdAt <= addDays(m.endDate, -2) && (n.pushedAt || n.readAt || n.waSentAt)),
+    m.notices.some((n) => n.createdAt <= addDays(m.endDate, -2) && (n.readAt || n.waSentAt)),
   ).length;
   const churned = await db.membership.count({
     where: { next: null, endDate: { gte: addDays(from, -GRACE), lt: addDays(ref, -GRACE) } },
@@ -52,6 +52,34 @@ export async function kpis(ref = today()) {
 
 owner.get('/kpis', isOwner, async (_req, res) => res.json(await kpis()));
 
+const businessHours = z
+  .array(
+    z.object({
+      days: z.string().trim().min(2).max(60),
+      hours: z.string().trim().min(2).max(80),
+      sortOrder: z.number().int().min(0).max(9999),
+    }),
+  )
+  .min(1)
+  .max(14)
+  .refine(
+    (rows) => new Set(rows.map((row) => row.days.toLocaleLowerCase('es-PE'))).size === rows.length,
+    'Días repetidos',
+  );
+
+owner.get('/business-hours', isOwner, async (_req, res) =>
+  res.json(await db.openingHour.findMany({ orderBy: { sortOrder: 'asc' } })),
+);
+
+owner.put('/business-hours', isOwner, async (req, res) => {
+  const rows = businessHours.parse(req.body);
+  await db.$transaction(async (tx) => {
+    await tx.openingHour.deleteMany();
+    await tx.openingHour.createMany({ data: rows });
+  });
+  res.json(await db.openingHour.findMany({ orderBy: { sortOrder: 'asc' } }));
+});
+
 owner.get('/loyalty/settings', isOwner, async (_req, res) => {
   if (!loyaltyEnabled()) return void res.status(404).json({ error: 'No encontrado' });
   res.json(await loyaltySettings());
@@ -78,6 +106,51 @@ owner.post('/loyalty/recalculate', isOwner, async (_req, res) => {
   if (!loyaltyEnabled()) return void res.status(404).json({ error: 'No encontrado' });
   const rows = await recalculateAllStreaks();
   res.json({ members: rows.length });
+});
+
+const missionState = z.enum(['UNLOCKED', 'IN_PROGRESS', 'LOCKED', 'MISSED']);
+
+/** Control operativo de misiones: la recepción registra asistencias; el avance siempre se calcula desde ellas. */
+owner.get('/loyalty/missions', isOwner, async (req, res) => {
+  if (!loyaltyEnabled()) return void res.status(404).json({ error: 'No encontrado' });
+  const query = z.object({ planId: z.string().optional(), state: missionState.optional() }).parse(req.query);
+  const ref = today();
+  const memberships = await db.membership.findMany({
+    where: {
+      cancelledAt: null,
+      startDate: { lte: ref },
+      endDate: { gte: ref },
+      ...(query.planId ? { planId: query.planId } : {}),
+    },
+    include: { member: { select: { id: true, fullName: true, attendanceCode: true } }, plan: true },
+    orderBy: { member: { fullName: 'asc' } },
+  });
+  const rows = await Promise.all(
+    memberships.map(async (membership) => ({
+      memberId: membership.memberId,
+      member: membership.member.fullName,
+      attendanceCode: membership.member.attendanceCode,
+      planId: membership.planId,
+      plan: membership.plan.name,
+      endsOn: iso(membership.endDate),
+      missions: await missionsForMembership(db, membership, ref),
+    })),
+  );
+  const missionRows = rows.filter((row) => row.missions.length > 0);
+  const filtered = query.state
+    ? missionRows.filter((row) => row.missions.some((mission) => mission.state === query.state))
+    : missionRows;
+  const allMissions = missionRows.flatMap((row) => row.missions);
+  res.json({
+    summary: {
+      members: missionRows.length,
+      availableRewards: allMissions.filter((mission) => mission.state === 'UNLOCKED').length,
+      inProgress: allMissions.filter((mission) => mission.state === 'IN_PROGRESS').length,
+      locked: allMissions.filter((mission) => mission.state === 'LOCKED').length,
+      missed: allMissions.filter((mission) => mission.state === 'MISSED').length,
+    },
+    members: filtered,
+  });
 });
 
 owner.post('/loyalty/members/:id/regenerate-code', isOwner, async (req, res) => {
@@ -153,9 +226,6 @@ owner.post('/broadcasts', isOwner, async (req, res) => {
       body: b.body,
     })),
   });
-  // shortcut: push secuencial dentro de la petición; mover a cola si los envíos superan ~1 000.
-  for (const m of targets)
-    if (m.userId) await pushToUser(m.userId, { title: b.title, body: b.body, url: '/app/socio' });
   res.status(201).json(bc);
 });
 
@@ -217,13 +287,12 @@ owner.get('/reports/notices.csv', isOwner, async (_req, res) => {
     res,
     'avisos',
     csv([
-      ['Fecha', 'Socio', 'Tipo', 'Título', 'Push', 'Leído', 'WhatsApp'],
+      ['Fecha', 'Socio', 'Tipo', 'Título', 'Leído', 'WhatsApp'],
       ...rows.map((n) => [
         n.createdAt.toISOString(),
         n.member.fullName,
         n.kind,
         n.title,
-        n.pushedAt?.toISOString(),
         n.readAt?.toISOString(),
         n.waSentAt?.toISOString(),
       ]),

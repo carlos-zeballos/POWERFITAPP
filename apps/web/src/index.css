@@ -1,0 +1,80 @@
+@import 'tailwindcss';
+
+/* Tokens de marca: espejo de src/design-tokens.ts */
+@theme {
+  --color-orange: #ec661c;
+  --color-black: #000000;
+  --color-white: #ffffff;
+  --color-surface: #141414;
+  --color-line: #2a2a2a;
+  --color-muted: #a6a6a6;
+  --color-danger: #ff6b5b;
+  --color-ok: #7bd88f;
+  --font-display: 'Big Shoulders Stencil Text', Impact, sans-serif;
+  --font-body: 'Lexend', system-ui, sans-serif;
+  --ease-snap: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* La marca vive sobre negro (manual §3, §6): tema oscuro único, sin conmutador. */
+:root {
+  color-scheme: dark;
+}
+html {
+  background: var(--color-black);
+  color: var(--color-white);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+}
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-black);
+}
+:focus-visible {
+  outline: 3px solid var(--color-orange);
+  outline-offset: 3px;
+}
+.display {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 0.9;
+}
+/* Logo como máscara: un solo archivo, cualquier color de la paleta (manual §3–4). */
+.logo {
+  background-color: currentColor;
+  mask: url('/logo-powerfit.png') top center / 100% auto no-repeat;
+  -webkit-mask: url('/logo-powerfit.png') top center / 100% auto no-repeat;
+  aspect-ratio: 423 / 774;
+}
+.isotipo {
+  aspect-ratio: 423 / 680; /* recorta la palabra POWER FIT: variación §4 */
+}
+@utility tap {
+  min-height: 44px;
+  min-width: 44px;
+}
+@utility btn {
+  @apply tap inline-flex items-center justify-center gap-2 rounded-none px-5 font-semibold transition-transform duration-150 active:scale-[0.97] disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-orange text-black;
+}
+@utility btn-ghost {
+  @apply btn border border-line text-white hover:border-orange;
+}
+@utility field {
+  @apply tap w-full border border-line bg-surface px-3 text-white placeholder:text-muted focus:border-orange;
+}
+@utility chip {
+  @apply inline-flex items-center px-2 py-0.5 text-xs font-semibold tracking-wide uppercase;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

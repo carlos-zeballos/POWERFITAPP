@@ -16,13 +16,12 @@ El modulo esta protegido por `LOYALTY_ENABLED=false`. La asistencia requiere con
 
 | Entidad | Propósito | Relaciones y reglas |
 | --- | --- | --- |
-| `User` | Credenciales, rol y revocación. | Un `Member` opcional y varias suscripciones push. Roles: OWNER, STAFF, MEMBER. |
+| `User` | Credenciales, rol y revocación. | Un `Member` opcional. Roles: OWNER, STAFF, MEMBER. |
 | `Member` | Datos mínimos con consentimiento. | Tiene membresías y avisos; correo opcional. |
 | `Plan` | Duración, precio informativo y vigencia. | Asociado a membresías; no participa en ningún cobro. |
 | `Membership` | Periodo de un plan. | `previousId` único enlaza la renovación y evita dobles registros. `onTime` alimenta KPI. |
-| `Notice` | Aviso D7/D3/D0/vencida o comunicado. | Único por `membershipId` + `kind`; registra lectura, push y WhatsApp. |
+| `Notice` | Aviso D7/D3/D0/vencida o comunicado. | Único por `membershipId` + `kind`; registra lectura y WhatsApp. |
 | `Broadcast` | Comunicado segmentado. | Conserva el segmento y total de destinatarios. |
-| `PushSubscription` | Endpoint y claves Web Push. | Endpoint único, cascada al borrar usuario. |
 | `JobRun` | Ejecución de tareas programadas. | Único por nombre y fecha para idempotencia. |
 | `ManualHours` | Horas de control manual por semana. | Una fila por inicio de semana. |
 | `Baseline` | Valores diagnósticos iniciales. | Clave única para 38 %, 6.5 % y 52 %. |

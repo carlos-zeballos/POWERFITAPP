@@ -4,6 +4,21 @@ const DAY = 86_400_000;
 /** Fecha del gimnasio (Lima) como medianoche UTC, mismo formato que columnas @db.Date. */
 export const today = (now = new Date()) => new Date(now.toLocaleDateString('en-CA', { timeZone: TZ }));
 export const addDays = (d: Date, n: number) => new Date(d.getTime() + n * DAY);
+
+/** Suma meses calendario conservando el día cuando existe; ej. 31 ene + 1 mes = 28/29 feb. */
+export function addMonths(d: Date, months: number) {
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth() + months;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month, Math.min(d.getUTCDate(), lastDay)));
+}
+
+/** La vigencia nace de la inscripción o de la renovación encadenada; nunca se captura manualmente. */
+export function membershipEndDate(start: Date, plan: { durationDays: number; durationMonths: number | null }) {
+  return plan.durationMonths
+    ? addDays(addMonths(start, plan.durationMonths), -1)
+    : addDays(start, plan.durationDays - 1);
+}
 export const daysLeft = (end: Date, ref = today()) => Math.round((end.getTime() - ref.getTime()) / DAY);
 export const iso = (d: Date) => d.toISOString().slice(0, 10);
 

@@ -12,7 +12,10 @@ export const metrics: RequestHandler = (req, res, next) => {
     buf.push(ms);
     if (buf.length > 1000) buf.shift();
     if (process.env.NODE_ENV !== 'test')
-      appendFile('logs/metrics.log', JSON.stringify({ at: new Date().toISOString(), m: req.method, p: req.path, s: res.statusCode, ms }) + '\n').catch(() => {});
+      appendFile(
+        'logs/metrics.log',
+        JSON.stringify({ at: new Date().toISOString(), m: req.method, p: req.path, s: res.statusCode, ms }) + '\n',
+      ).catch(() => {});
   });
   next();
 };

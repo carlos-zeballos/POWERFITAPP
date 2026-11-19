@@ -2,17 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import QRCode from 'qrcode';
 import { BrowserQRCodeReader } from '@zxing/browser';
-import { api } from '../lib';
+import { api, fmtTime } from '../lib';
+import { MissionTimeline, type Mission } from './MissionTimeline';
 
 type Loyalty = {
   attendanceCode: string | null;
   qrToken: string;
   points: number;
-  streak: {
-    currentWeeks: number;
-    bestWeeks: number;
-    weeks: { attendanceCount: number; metGoal: boolean; freezeUsed: boolean }[];
-  };
+  subscription: { plan: string; startsOn: string; endsOn: string; registeredAt: string };
+  missions: Mission[];
 };
 type Checkin = {
   created: boolean;
@@ -35,34 +33,24 @@ export function FidelidadSocio() {
   }, [q.data?.qrToken]);
   if (q.isPending) return <p aria-busy="true">Cargando fidelización…</p>;
   if (q.isError) return <p role="alert">{q.error.message}</p>;
-  const week = q.data.streak.weeks.at(-1);
   return (
     <>
-      <h1 className="display text-5xl">Mi racha</h1>
-      <section className="mt-6 border border-orange bg-surface p-5" aria-label="Racha y puntos">
-        <p className="text-sm text-muted">Racha actual</p>
-        <p className="display text-7xl text-orange">{q.data.streak.currentWeeks}</p>
-        <p>semanas consecutivas · mejor: {q.data.streak.bestWeeks}</p>
-        <div className="mt-5 h-2 bg-line">
-          <div
-            className="h-full bg-orange"
-            style={{ width: `${Math.min(100, ((week?.attendanceCount ?? 0) / 3) * 100)}%` }}
-          />
-        </div>
-        <p className="mt-2 text-sm">Esta semana: {week?.attendanceCount ?? 0} / 3 asistencias</p>
-        <p className="display mt-6 text-4xl">{q.data.points} puntos</p>
+      <h1 className="display text-5xl">Mi progreso</h1>
+      <section className="mt-6 border border-orange bg-surface p-5" aria-label="Puntos acumulados">
+        <p className="text-sm text-muted">Puntos acumulados por asistencias válidas</p>
+        <p className="display mt-3 text-6xl text-orange">{q.data.points}</p>
+        <p className="mt-2 text-sm text-muted">Tu avance y premios se miden en las misiones de abajo.</p>
       </section>
+      <MissionTimeline
+        missions={q.data.missions}
+        plan={q.data.subscription.plan}
+        startsOn={q.data.subscription.startsOn}
+        endsOn={q.data.subscription.endsOn}
+      />
       <section className="mt-6 border border-line p-5" aria-label="Identificador de asistencia">
         <p className="text-sm text-muted">Muéstralo a recepción</p>
         <p className="display mt-2 text-7xl tracking-[.2em] text-orange">{q.data.attendanceCode ?? '----'}</p>
         {image && <img src={image} alt="QR personal para registrar asistencia" className="mt-4 w-56 bg-white p-2" />}
-      </section>
-      <section className="mt-6 border border-line p-5">
-        <h2 className="display text-3xl">Cómo funciona</h2>
-        <p className="mt-3 text-muted">
-          Cumple 3 asistencias entre lunes y domingo. Cada mes tienes un congelamiento para proteger una semana que no
-          llegue a la meta. Una semana sin meta ni congelamiento rompe la racha.
-        </p>
       </section>
     </>
   );
@@ -148,9 +136,7 @@ export function Asistencia() {
           <p className="mt-2 text-xl">
             {result.member} · {result.plan}
           </p>
-          <p>
-            {result.weekAttendance}/{result.weeklyGoal} esta semana · racha {result.streakWeeks} semanas
-          </p>
+          <p>{result.daysLeft >= 0 ? `${result.daysLeft} días restantes de membresía` : 'Membresía vencida'}</p>
           <p className="display mt-3 text-3xl">
             +{result.pointsAwarded} puntos · {result.pointsBalance} saldo
           </p>
@@ -164,8 +150,7 @@ export function Asistencia() {
         <ul className="mt-3 divide-y divide-line">
           {today.data?.map((item) => (
             <li key={item.id} className="py-3">
-              {item.member} ·{' '}
-              {new Date(item.checkedAt).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
+              {item.member} · {fmtTime(item.checkedAt)}
             </li>
           ))}
         </ul>

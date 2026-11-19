@@ -23,7 +23,11 @@ const cookie = { httpOnly: true, sameSite: 'strict' as const, secure };
 function issue(res: Response, u: { id: string; role: Role; tokenVersion: number; member?: { id: string } | null }) {
   const payload: AuthUser = { id: u.id, role: u.role, memberId: u.member?.id };
   res.cookie('at', jwt.sign(payload, ACCESS, { expiresIn: '15m' }), { ...cookie, maxAge: 15 * 60_000 });
-  res.cookie('rt', jwt.sign({ id: u.id, v: u.tokenVersion }, REFRESH, { expiresIn: '30d' }), { ...cookie, path: '/api/v1/auth', maxAge: 30 * 86_400_000 });
+  res.cookie('rt', jwt.sign({ id: u.id, v: u.tokenVersion }, REFRESH, { expiresIn: '30d' }), {
+    ...cookie,
+    path: '/api/v1/auth',
+    maxAge: 30 * 86_400_000,
+  });
   return payload;
 }
 
@@ -41,12 +45,21 @@ export const requireRole =
   };
 
 export const auth = Router();
-const loginLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Demasiados intentos, espera 15 minutos' } });
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos, espera 15 minutos' },
+});
 
 auth.post('/login', loginLimiter, async (req, res) => {
-  const { email, password } = z.object({ email: z.string().email().toLowerCase(), password: z.string().min(1).max(200) }).parse(req.body);
+  const { email, password } = z
+    .object({ email: z.string().email().toLowerCase(), password: z.string().min(1).max(200) })
+    .parse(req.body);
   const u = await db.user.findUnique({ where: { email }, include: { member: { select: { id: true } } } });
-  if (!u || !(await bcrypt.compare(password, u.passwordHash))) return void res.status(401).json({ error: 'Correo o contraseña incorrectos' });
+  if (!u || !(await bcrypt.compare(password, u.passwordHash)))
+    return void res.status(401).json({ error: 'Correo o contraseña incorrectos' });
   res.json({ ...issue(res, u), name: u.name });
 });
 
@@ -72,6 +85,9 @@ auth.post('/logout', async (req, res) => {
 });
 
 auth.get('/me', requireRole('OWNER', 'STAFF', 'MEMBER'), async (req, res) => {
-  const u = await db.user.findUniqueOrThrow({ where: { id: req.user.id }, select: { name: true, email: true, role: true } });
+  const u = await db.user.findUniqueOrThrow({
+    where: { id: req.user.id },
+    select: { name: true, email: true, role: true },
+  });
   res.json({ ...req.user, ...u });
 });
